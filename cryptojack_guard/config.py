@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 #: Fixture env var, mirroring ``IAM_GUARD_FIXTURE``.
 FIXTURE_ENV_VAR = "CRYPTOJACK_GUARD_FIXTURE"

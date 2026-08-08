@@ -123,7 +123,7 @@ were not checked.
 | Environment variable | Purpose |
 | --- | --- |
 | `IAM_GUARD_PROJECT_ID` | Default project to audit when the user doesn't name one |
-| `IAM_GUARD_MODEL` | Gemini model for all LLM stages (default `gemini-3-flash-preview`) |
+| `IAM_GUARD_MODEL` | Gemini model for all LLM stages (default `gemini-3.6-flash`) |
 | `IAM_GUARD_TRUSTED_DOMAINS` | Comma-separated internal domains. **Set this** — it is what makes external-principal detection meaningful |
 | `IAM_GUARD_UNTRUSTED_DOMAINS` | Consumer domains always treated as risky (defaults to gmail.com, outlook.com, …) |
 | `IAM_GUARD_MAX_BUCKETS` / `_MAX_DATASETS` / `_MAX_INSTANCES` | Per-run inspection caps |
@@ -296,7 +296,7 @@ means "could not check billing", not "no budget exists".
 | `CRYPTOJACK_GUARD_PROJECT_ID` | Default project to check |
 | `CRYPTOJACK_GUARD_ORG_ID` | Organisation for SCC findings and effective org policies |
 | `CRYPTOJACK_GUARD_BILLING_ACCOUNT` | Billing account whose budgets are listed |
-| `CRYPTOJACK_GUARD_MODEL` | Gemini model for the LLM stages (default `gemini-3-flash-preview`) |
+| `CRYPTOJACK_GUARD_MODEL` | Gemini model for the LLM stages (default `gemini-3.6-flash`) |
 | `CRYPTOJACK_GUARD_CPU_THRESHOLD` / `_CPU_SUSTAINED_MINUTES` | What counts as sustained saturation (default 0.9 for 120 min) |
 | `CRYPTOJACK_GUARD_GPU_THRESHOLD` / `_QUOTA_THRESHOLD` | GPU-duty and quota-usage ratios that raise a signal (default 0.8) |
 | `CRYPTOJACK_GUARD_LOOKBACK_HOURS` | Monitoring and SCC time window (default 24) |
