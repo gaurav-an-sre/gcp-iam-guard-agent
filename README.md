@@ -1,6 +1,22 @@
+# GCP Guard Agents
+
+Two [ADK](https://google.github.io/adk-docs/) **workflow agents** for defending a Google Cloud
+project, sharing one deterministic-rule-engine design, one set of read-only collectors and one
+deployment path:
+
+| Agent | Question it answers | Entry point |
+| --- | --- | --- |
+| **IAM Guard** | *Which IAM loopholes could an attacker turn into privilege escalation, cryptojacking or account takeover?* | `iam_guard.agent:root_agent` |
+| **Cryptojack Guard** | *Is this project being mined right now, and what stops it happening again?* | `cryptojack_guard.agent:root_agent` |
+
+Both are strictly **read-only and advisory**: every GCP call is a `get`/`list`, and fixes are
+emitted as `gcloud` commands for a human to review and run.
+
+---
+
 # IAM Guard
 
-An [ADK](https://google.github.io/adk-docs/) **workflow agent** that audits Google Cloud IAM for
+An ADK **workflow agent** that audits Google Cloud IAM for
 loopholes an attacker can turn into privilege escalation, **cryptojacking**, or **phishing /
 account takeover**, then hands back a prioritised remediation plan. It is designed to be deployed
 on **Agent Runtime** (Agent Engine) and registered as a custom agent in **Gemini Enterprise**, so a
@@ -153,7 +169,7 @@ were not checked.
 ## Tests and lint
 
 ```bash
-pytest          # 24 tests, no network and no credentials required
+pytest          # 120 tests, no network and no credentials required
 ruff check .
 ruff format --check .
 ```
@@ -169,6 +185,156 @@ ruff format --check .
   deliberately built from the template agents so it deploys today; migration is a
   self-contained change to `iam_guard/agent.py`.
 
+---
+
+# Cryptojack Guard
+
+IAM Guard finds the *preconditions* for cryptojacking. Cryptojack Guard answers the other half: is
+compute in this project being abused for mining **now**, and which guardrails would have prevented
+it. It is **advisory only** — it never stops a VM, revokes a key, edits IAM, changes a quota or
+applies an org policy. It explains what it saw and prints the commands.
+
+```
+SequentialAgent  cryptojack_guard
+├── 1. LlmAgent        scope_agent           → state["audit_scope"]
+├── 2. ParallelAgent   signal_collectors      (4 read-only collectors, concurrently)
+│      ├── LlmAgent    scc_collector         → state["scc_findings"]
+│      ├── LlmAgent    monitoring_collector  → state["monitoring_signals"]
+│      ├── LlmAgent    capacity_collector    → state["compute_quotas"], state["gce_inventory"]
+│      └── LlmAgent    guardrail_collector   → state["billing_budgets"], state["org_policies"]
+├── 3. RiskEngineAgent risk_engine           → state["cryptojack_signals"], ["cryptojack_summary"]
+└── 4. LlmAgent        report_agent          → state["cryptojack_report"]
+```
+
+## Confidence, not alarms
+
+Sustained 100% CPU is not proof of mining — a batch job looks identical. So every signal carries a
+confidence level, and the risk engine only escalates when evidence corroborates:
+
+| Confidence | What earns it |
+| --- | --- |
+| `CONFIRMED` | A mining-specific SCC finding (cryptomining hash match, YARA rule, bad mining domain/IP) |
+| `HIGH` | An SCC threat finding on a VM that is *also* saturated, or saturated + internet-facing + running a privileged service account |
+| `MEDIUM` | Sustained CPU saturation, capacity in a region the project otherwise never uses, non-mining SCC threat findings |
+| `LOW` | GPU utilisation alone, quota near its limit in an expected region, and every preventive gap |
+
+Signals are `detection` (something is happening) or `preventive` (something is missing), and a run
+ends in one verdict — `confirmed_mining`, `likely_mining`, `suspected_mining`,
+`no_detections_preventive_gaps` or `clean` — plus a 0–100 risk score.
+
+## What it looks at
+
+| Source | Signals |
+| --- | --- |
+| Security Command Center | Cryptomining hash-match / YARA / bad-domain / bad-IP findings; other active threat findings as corroboration. Misconfiguration findings are ignored — IAM Guard owns those |
+| Cloud Monitoring | `compute.googleapis.com/instance/cpu/utilization` above a threshold for a configured duration; optional `agent.googleapis.com/gpu/utilization` |
+| Compute Engine quotas | CPU/GPU usage per region — capacity in unexpected regions, usage near the limit |
+| Cloud Billing Budgets | No budget covering the project, or a budget with no notification channel, so a spend spike goes unnoticed |
+| Organization Policy | `iam.disableServiceAccountKeyCreation`, `compute.vmExternalIpAccess`, `compute.requireOsLogin`, `compute.disableSerialPortAccess`, `compute.disableNestedVirtualization` |
+| IAM / GCE inventory | Reuses IAM Guard's `cryptojacking`-category findings as preconditions, and correlates external IPs and privileged attached service accounts with utilisation |
+
+Each detection carries an explanation, investigation steps and advisory commands ordered so evidence
+survives — snapshot before stop, then audit-log lookups.
+
+Full rule list: `cryptojack_guard/analysis.py`.
+
+## Run it
+
+Deterministic engine only, no GCP access and no model:
+
+```bash
+python scripts/run_local.py --agent cryptojack-guard \
+    --rules-only examples/cryptojacked_project.json
+```
+
+Full workflow against the recorded project (needs a Gemini model, touches no GCP resources):
+
+```bash
+export GOOGLE_GENAI_USE_VERTEXAI=1 GOOGLE_CLOUD_PROJECT=my-project GOOGLE_CLOUD_LOCATION=us-central1
+export CRYPTOJACK_GUARD_FIXTURE=examples/cryptojacked_project.json
+export IAM_GUARD_FIXTURE=examples/cryptojacked_project.json
+python scripts/run_local.py --agent cryptojack-guard --project demo-prod-1234
+```
+
+Live:
+
+```bash
+gcloud auth application-default login
+gcloud services enable securitycenter.googleapis.com monitoring.googleapis.com \
+    compute.googleapis.com billingbudgets.googleapis.com orgpolicy.googleapis.com
+export CRYPTOJACK_GUARD_ORG_ID=123456789012           # needed for SCC and org policy
+export CRYPTOJACK_GUARD_BILLING_ACCOUNT=01ABCD-234567 # needed for budgets
+python scripts/run_local.py --agent cryptojack-guard --project my-prod-project
+```
+
+Read-only roles, note the three different scopes:
+
+```bash
+# on the audited project
+for ROLE in roles/iam.securityReviewer roles/compute.viewer roles/monitoring.viewer; do
+  gcloud projects add-iam-policy-binding AUDITED_PROJECT \
+    --member="serviceAccount:AGENT_IDENTITY" --role="$ROLE"
+done
+# on the organisation
+for ROLE in roles/securitycenter.findingsViewer roles/orgpolicy.policyViewer; do
+  gcloud organizations add-iam-policy-binding ORG_ID \
+    --member="serviceAccount:AGENT_IDENTITY" --role="$ROLE"
+done
+# on the billing account
+gcloud billing accounts add-iam-policy-binding BILLING_ACCOUNT \
+  --member="serviceAccount:AGENT_IDENTITY" --role="roles/billing.viewer"
+```
+
+Any source that cannot be read is recorded in `state["collection_errors"]` and the report states
+which signals were unavailable. Unreadable is never reported as clean: a budget read that fails
+means "could not check billing", not "no budget exists".
+
+## Configuration
+
+| Environment variable | Purpose |
+| --- | --- |
+| `CRYPTOJACK_GUARD_PROJECT_ID` | Default project to check |
+| `CRYPTOJACK_GUARD_ORG_ID` | Organisation for SCC findings and effective org policies |
+| `CRYPTOJACK_GUARD_BILLING_ACCOUNT` | Billing account whose budgets are listed |
+| `CRYPTOJACK_GUARD_MODEL` | Gemini model for the LLM stages |
+| `CRYPTOJACK_GUARD_CPU_THRESHOLD` / `_CPU_SUSTAINED_MINUTES` | What counts as sustained saturation (default 0.9 for 120 min) |
+| `CRYPTOJACK_GUARD_GPU_THRESHOLD` / `_QUOTA_THRESHOLD` | GPU-duty and quota-usage ratios that raise a signal (default 0.8) |
+| `CRYPTOJACK_GUARD_LOOKBACK_HOURS` | Monitoring and SCC time window (default 24) |
+| `CRYPTOJACK_GUARD_MAX_INSTANCES` / `_MAX_FINDINGS` | Per-run caps |
+| `CRYPTOJACK_GUARD_FIXTURE` | Recorded signals JSON; makes all collectors offline |
+
+## Deploy it
+
+Same flow as IAM Guard, selected with `--agent`:
+
+```bash
+python deployment/deploy.py create --agent cryptojack-guard \
+  --project MY_PROJECT --location us-central1 \
+  --staging-bucket gs://MY_PROJECT-agent-staging \
+  --audit-project MY_PROJECT \
+  --organization ORG_ID --billing-account BILLING_ACCOUNT
+```
+
+Then register the printed reasoning engine with Gemini Enterprise exactly as above.
+
+## Limitations
+
+* **Your SCC tier decides whether `CONFIRMED` is reachable at all.** Event Threat Detection
+  cryptomining detections and VM Threat Detection's memory-based miner detection require SCC
+  **Premium or Enterprise**. On Standard the agent still runs, but mining can only ever be
+  *suspected* from utilisation, capacity and guardrail signals.
+* A budget is an *alerting* control, not a spend cap — it does not stop a miner, it makes the spike
+  visible.
+* Quota usage is read per region, so a miner that stays inside existing quota in a region you
+  already use yields only a low-confidence signal.
+* No egress analysis: identifying mining-pool traffic needs VPC Flow Logs or Cloud NAT logs in
+  BigQuery, which this agent does not query.
+* **Never verified against a live project.** Collectors, the LLM stages, the Agent Runtime deploy
+  and the Gemini Enterprise registration have only been exercised offline against fixtures and unit
+  tests. The confidence thresholds will need tuning against real workloads.
+
+---
+
 ## Layout
 
 ```
@@ -181,7 +347,16 @@ iam_guard/
   prompts.py           # instructions for the LLM stages
   tools/collectors.py  # read-only GCP collectors (IAM, SAs, GCE, GCS, BigQuery)
   tools/findings.py    # findings/remediation lookup tools for the reporting stage
-deployment/            # Agent Runtime deploy + Gemini Enterprise registration
-examples/              # recorded vulnerable inventory used by tests and offline runs
+  tools/session_state.py # shared collector session-state and error handling
+  normalize.py         # defensive coercion helpers shared by both rule engines
+cryptojack_guard/
+  agent.py             # root_agent: the SequentialAgent workflow
+  analysis.py          # deterministic risk engine (no model, no network)
+  models.py            # Signal, Confidence, SignalKind, verdict and scoring
+  risk_engine_agent.py # custom BaseAgent wrapping the risk engine as a workflow stage
+  tools/collectors.py  # read-only SCC, Monitoring, quota, budget, org-policy collectors
+  tools/signals.py     # signal filtering and the human-applied response plan
+deployment/            # Agent Runtime deploy (--agent) + Gemini Enterprise registration
+examples/              # recorded inventories used by tests and offline runs
 scripts/run_local.py   # local runner (live, offline-fixture, or rules-only)
 ```

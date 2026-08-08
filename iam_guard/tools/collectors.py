@@ -14,83 +14,39 @@ and the demo use.
 
 from __future__ import annotations
 
-import json
-import os
 from typing import Any
 
 from google.adk.tools import ToolContext
-from google.api_core import exceptions as gcp_exceptions
-from google.auth import exceptions as auth_exceptions
 from google.cloud import bigquery, compute_v1, iam_admin_v1, resourcemanager_v3, storage
 from google.iam.v1 import iam_policy_pb2, options_pb2
 
 from iam_guard.config import get_settings
 from iam_guard.models import (
     STATE_BIGQUERY,
-    STATE_COLLECTION_ERRORS,
     STATE_GCE,
     STATE_GCS,
     STATE_PROJECT_IAM,
     STATE_SERVICE_ACCOUNTS,
 )
+from iam_guard.tools.session_state import (
+    COLLECTION_ERRORS,
+    load_fixture,
+    missing_project,
+    record_inventory,
+    tool_failure,
+)
 
 FIXTURE_ENV_VAR = "IAM_GUARD_FIXTURE"
-
-#: Credential errors surface while building a client, API errors while calling it.
-COLLECTION_ERRORS = (
-    gcp_exceptions.GoogleAPIError,
-    auth_exceptions.GoogleAuthError,
-    OSError,
-)
 
 
 def _resolve_project(project_id: str) -> str:
     return project_id or get_settings().default_project_id
 
 
-def _fixture(section: str) -> dict[str, Any] | None:
-    path = os.environ.get(FIXTURE_ENV_VAR)
-    if not path:
-        return None
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle).get(section)
-
-
-def _record(tool_context: ToolContext | None, key: str, value: dict[str, Any]) -> None:
-    if tool_context is not None:
-        tool_context.state[key] = value
-
-
-def _record_error(tool_context: ToolContext | None, key: str, message: str) -> None:
-    if tool_context is None:
-        return
-    errors = dict(tool_context.state.get(STATE_COLLECTION_ERRORS) or {})
-    errors[key] = message
-    tool_context.state[STATE_COLLECTION_ERRORS] = errors
-
-
-def _failure(
-    tool_context: ToolContext | None, key: str, error: Exception, hint: str
-) -> dict[str, Any]:
-    message = f"{type(error).__name__}: {error}"
-    _record_error(tool_context, key, message)
-    return {"status": "error", "error": message, "hint": hint}
-
-
 def _load_fixture(
     section: str, tool_context: ToolContext | None
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Returns ``(inventory, failure)``; both are None when running against live APIs."""
-    try:
-        return _fixture(section), None
-    except (OSError, ValueError) as error:
-        return None, _failure(
-            tool_context,
-            section,
-            error,
-            f"Point {FIXTURE_ENV_VAR} at a readable JSON inventory file, or unset it "
-            "to collect from Google Cloud.",
-        )
+    return load_fixture(FIXTURE_ENV_VAR, section, tool_context)
 
 
 def collect_project_iam_policy(
@@ -106,11 +62,11 @@ def collect_project_iam_policy(
     """
     project_id = _resolve_project(project_id)
     if not project_id:
-        return {"status": "error", "error": "No project_id supplied or configured."}
+        return missing_project()
 
-    inventory, failure = _load_fixture(STATE_PROJECT_IAM, tool_context)
-    if failure is not None:
-        return failure
+    inventory, unusable_fixture = _load_fixture(STATE_PROJECT_IAM, tool_context)
+    if unusable_fixture is not None:
+        return unusable_fixture
     if inventory is None:
         try:
             client = resourcemanager_v3.ProjectsClient()
@@ -121,7 +77,7 @@ def collect_project_iam_policy(
                 )
             )
         except COLLECTION_ERRORS as error:
-            return _failure(
+            return tool_failure(
                 tool_context,
                 STATE_PROJECT_IAM,
                 error,
@@ -153,7 +109,7 @@ def collect_project_iam_policy(
             ],
         }
 
-    _record(tool_context, STATE_PROJECT_IAM, inventory)
+    record_inventory(tool_context, STATE_PROJECT_IAM, inventory)
     bindings = inventory.get("bindings", [])
     return {
         "status": "ok",
@@ -185,11 +141,11 @@ def collect_service_accounts(
     """
     project_id = _resolve_project(project_id)
     if not project_id:
-        return {"status": "error", "error": "No project_id supplied or configured."}
+        return missing_project()
 
-    inventory, failure = _load_fixture(STATE_SERVICE_ACCOUNTS, tool_context)
-    if failure is not None:
-        return failure
+    inventory, unusable_fixture = _load_fixture(STATE_SERVICE_ACCOUNTS, tool_context)
+    if unusable_fixture is not None:
+        return unusable_fixture
     if inventory is None:
         try:
             client = iam_admin_v1.IAMClient()
@@ -225,7 +181,7 @@ def collect_service_accounts(
                     }
                 )
         except COLLECTION_ERRORS as error:
-            return _failure(
+            return tool_failure(
                 tool_context,
                 STATE_SERVICE_ACCOUNTS,
                 error,
@@ -233,7 +189,7 @@ def collect_service_accounts(
             )
         inventory = {"project_id": project_id, "service_accounts": accounts}
 
-    _record(tool_context, STATE_SERVICE_ACCOUNTS, inventory)
+    record_inventory(tool_context, STATE_SERVICE_ACCOUNTS, inventory)
     accounts = inventory.get("service_accounts", [])
     return {
         "status": "ok",
@@ -258,12 +214,12 @@ def collect_compute_inventory(
     """
     project_id = _resolve_project(project_id)
     if not project_id:
-        return {"status": "error", "error": "No project_id supplied or configured."}
+        return missing_project()
     settings = get_settings()
 
-    inventory, failure = _load_fixture(STATE_GCE, tool_context)
-    if failure is not None:
-        return failure
+    inventory, unusable_fixture = _load_fixture(STATE_GCE, tool_context)
+    if unusable_fixture is not None:
+        return unusable_fixture
     if inventory is None:
         try:
             instances_client = compute_v1.InstancesClient()
@@ -314,7 +270,7 @@ def collect_compute_inventory(
                         }
                     )
         except COLLECTION_ERRORS as error:
-            return _failure(
+            return tool_failure(
                 tool_context,
                 STATE_GCE,
                 error,
@@ -326,7 +282,7 @@ def collect_compute_inventory(
             "instances": instances,
         }
 
-    _record(tool_context, STATE_GCE, inventory)
+    record_inventory(tool_context, STATE_GCE, inventory)
     instances = inventory.get("instances", [])
     return {
         "status": "ok",
@@ -362,12 +318,12 @@ def collect_storage_inventory(
     """
     project_id = _resolve_project(project_id)
     if not project_id:
-        return {"status": "error", "error": "No project_id supplied or configured."}
+        return missing_project()
     settings = get_settings()
 
-    inventory, failure = _load_fixture(STATE_GCS, tool_context)
-    if failure is not None:
-        return failure
+    inventory, unusable_fixture = _load_fixture(STATE_GCS, tool_context)
+    if unusable_fixture is not None:
+        return unusable_fixture
     if inventory is None:
         try:
             client = storage.Client(project=project_id)
@@ -391,7 +347,7 @@ def collect_storage_inventory(
                     }
                 )
         except COLLECTION_ERRORS as error:
-            return _failure(
+            return tool_failure(
                 tool_context,
                 STATE_GCS,
                 error,
@@ -399,7 +355,7 @@ def collect_storage_inventory(
             )
         inventory = {"project_id": project_id, "buckets": buckets}
 
-    _record(tool_context, STATE_GCS, inventory)
+    record_inventory(tool_context, STATE_GCS, inventory)
     buckets = inventory.get("buckets", [])
     public = [
         bucket.get("name")
@@ -428,12 +384,12 @@ def collect_bigquery_inventory(
     """
     project_id = _resolve_project(project_id)
     if not project_id:
-        return {"status": "error", "error": "No project_id supplied or configured."}
+        return missing_project()
     settings = get_settings()
 
-    inventory, failure = _load_fixture(STATE_BIGQUERY, tool_context)
-    if failure is not None:
-        return failure
+    inventory, unusable_fixture = _load_fixture(STATE_BIGQUERY, tool_context)
+    if unusable_fixture is not None:
+        return unusable_fixture
     if inventory is None:
         try:
             client = bigquery.Client(project=project_id)
@@ -455,7 +411,7 @@ def collect_bigquery_inventory(
                     }
                 )
         except COLLECTION_ERRORS as error:
-            return _failure(
+            return tool_failure(
                 tool_context,
                 STATE_BIGQUERY,
                 error,
@@ -463,7 +419,7 @@ def collect_bigquery_inventory(
             )
         inventory = {"project_id": project_id, "datasets": datasets}
 
-    _record(tool_context, STATE_BIGQUERY, inventory)
+    record_inventory(tool_context, STATE_BIGQUERY, inventory)
     datasets = inventory.get("datasets", [])
     broadly_shared = [
         dataset.get("dataset_id")

@@ -24,33 +24,12 @@ from iam_guard.models import (
     ThreatCategory,
     sort_findings,
 )
+from iam_guard.normalize import dicts as _dicts
+from iam_guard.normalize import mapping as _mapping
+from iam_guard.normalize import strings as _strings
+from iam_guard.normalize import text as _text
 
 _PUBLIC_BQ_ENTITIES = {"allAuthenticatedUsers", "allUsers"}
-
-
-def _dicts(container: dict[str, Any], key: str) -> list[dict[str, Any]]:
-    """Reads ``key`` as a list of objects, tolerating null, scalars and junk items."""
-    value = container.get(key)
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def _strings(container: dict[str, Any], key: str) -> list[str]:
-    value = container.get(key)
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _mapping(container: dict[str, Any], key: str) -> dict[str, Any]:
-    value = container.get(key)
-    return value if isinstance(value, dict) else {}
-
-
-def _text(container: dict[str, Any], key: str, default: str = "") -> str:
-    value = container.get(key)
-    return value if isinstance(value, str) and value else default
 
 
 def _bindings(project_iam: dict[str, Any]) -> list[dict[str, Any]]:

@@ -1,0 +1,293 @@
+{
+  "_comment": "Recorded signals for a project being mined. Point both CRYPTOJACK_GUARD_FIXTURE and IAM_GUARD_FIXTURE at this file to run the whole workflow offline. Every rule in cryptojack_guard.analysis fires at least once here.",
+  "scc_findings": {
+    "project_id": "demo-prod-1234",
+    "findings": [
+      {
+        "name": "projects/demo-prod-1234/sources/1122/findings/f-mining-1",
+        "category": "Execution: Cryptocurrency Mining Hash Match",
+        "severity": "HIGH",
+        "state": "ACTIVE",
+        "finding_class": "THREAT",
+        "resource_name": "//compute.googleapis.com/projects/demo-prod-1234/zones/us-central1-a/instances/batch-worker-7",
+        "event_time": "2026-08-07T22:14:03Z",
+        "description": "VM Threat Detection matched a known cryptocurrency mining binary hash in guest memory.",
+        "next_steps": "Investigate the process, then stop the instance and rotate the credentials that created it."
+      },
+      {
+        "name": "projects/demo-prod-1234/sources/1122/findings/f-mining-2",
+        "category": "Malware: Cryptomining Bad Domain",
+        "severity": "HIGH",
+        "state": "ACTIVE",
+        "finding_class": "THREAT",
+        "resource_name": "//compute.googleapis.com/projects/demo-prod-1234/zones/us-central1-a/instances/batch-worker-7",
+        "event_time": "2026-08-07T22:16:41Z",
+        "description": "Event Threat Detection observed DNS lookups for a known mining pool domain.",
+        "next_steps": "Block the destination and investigate the workload."
+      },
+      {
+        "name": "projects/demo-prod-1234/sources/1122/findings/f-threat-1",
+        "category": "Persistence: IAM Anomalous Grant",
+        "severity": "MEDIUM",
+        "state": "ACTIVE",
+        "finding_class": "THREAT",
+        "resource_name": "//cloudresourcemanager.googleapis.com/projects/demo-prod-1234",
+        "event_time": "2026-08-07T21:02:00Z",
+        "description": "An external account was granted a project role outside the usual change window.",
+        "next_steps": "Confirm the grant was intended."
+      },
+      {
+        "name": "projects/demo-prod-1234/sources/1122/findings/f-misconfig-1",
+        "category": "Public bucket ACL",
+        "severity": "HIGH",
+        "state": "ACTIVE",
+        "finding_class": "MISCONFIGURATION",
+        "resource_name": "//storage.googleapis.com/demo-prod-public-assets",
+        "event_time": "2026-08-01T10:00:00Z",
+        "description": "Bucket is readable by allUsers.",
+        "next_steps": "Remove the public binding."
+      }
+    ]
+  },
+  "monitoring_signals": {
+    "project_id": "demo-prod-1234",
+    "lookback_hours": 24,
+    "cpu_threshold": 0.9,
+    "gpu_metric_available": true,
+    "instances": [
+      {
+        "instance": "batch-worker-7",
+        "instance_id": "4471100022330011",
+        "zone": "us-central1-a",
+        "sample_count": 288,
+        "mean_cpu_utilization": 0.987,
+        "max_cpu_utilization": 0.999,
+        "minutes_above_cpu_threshold": 1425,
+        "mean_gpu_utilization": 0.94,
+        "max_gpu_utilization": 0.99
+      },
+      {
+        "instance": "render-node-2",
+        "instance_id": "4471100022330012",
+        "zone": "us-central1-b",
+        "sample_count": 288,
+        "mean_cpu_utilization": 0.96,
+        "max_cpu_utilization": 1.0,
+        "minutes_above_cpu_threshold": 900
+      },
+      {
+        "instance": "ml-train-1",
+        "instance_id": "4471100022330013",
+        "zone": "us-central1-b",
+        "sample_count": 288,
+        "mean_cpu_utilization": 0.41,
+        "max_cpu_utilization": 0.72,
+        "minutes_above_cpu_threshold": 0,
+        "mean_gpu_utilization": 0.88,
+        "max_gpu_utilization": 0.97
+      },
+      {
+        "instance": "api-frontend-1",
+        "instance_id": "4471100022330014",
+        "zone": "us-central1-b",
+        "sample_count": 288,
+        "mean_cpu_utilization": 0.18,
+        "max_cpu_utilization": 0.55,
+        "minutes_above_cpu_threshold": 0
+      }
+    ]
+  },
+  "compute_quotas": {
+    "project_id": "demo-prod-1234",
+    "quota_usage_threshold": 0.8,
+    "regions": [
+      {
+        "region": "us-central1",
+        "quotas": [
+          {"metric": "CPUS", "limit": 240.0, "usage": 228.0},
+          {"metric": "NVIDIA_T4_GPUS", "limit": 8.0, "usage": 4.0}
+        ]
+      },
+      {
+        "region": "asia-southeast1",
+        "quotas": [
+          {"metric": "CPUS", "limit": 120.0, "usage": 96.0},
+          {"metric": "PREEMPTIBLE_NVIDIA_T4_GPUS", "limit": 16.0, "usage": 12.0}
+        ]
+      },
+      {
+        "region": "europe-west4",
+        "quotas": [
+          {"metric": "CPUS", "limit": 200.0, "usage": 0.0}
+        ]
+      }
+    ]
+  },
+  "billing_budgets": {
+    "project_id": "demo-prod-1234",
+    "billing_account": "0101AA-BBCCDD-223344",
+    "budgets": [
+      {
+        "name": "billingAccounts/0101AA-BBCCDD-223344/budgets/b-1",
+        "display_name": "other project only",
+        "projects": ["projects/demo-sandbox-9999"],
+        "threshold_percents": [0.9],
+        "notifications_configured": true
+      }
+    ]
+  },
+  "org_policies": {
+    "project_id": "demo-prod-1234",
+    "constraints": {
+      "constraints/compute.disableNestedVirtualization": {
+        "enforced": true,
+        "detail": "boolean constraint enforced"
+      },
+      "constraints/compute.disableSerialPortAccess": {
+        "enforced": false,
+        "detail": "no enforcing rule in effective policy"
+      },
+      "constraints/compute.requireOsLogin": {
+        "enforced": false,
+        "detail": "no enforcing rule in effective policy"
+      },
+      "constraints/compute.vmExternalIpAccess": {
+        "enforced": false,
+        "detail": "no enforcing rule in effective policy"
+      },
+      "constraints/iam.disableServiceAccountKeyCreation": {
+        "enforced": false,
+        "detail": "no enforcing rule in effective policy"
+      }
+    }
+  },
+  "project_iam": {
+    "project_id": "demo-prod-1234",
+    "bindings": [
+      {
+        "role": "roles/owner",
+        "members": ["user:founder@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/editor",
+        "members": [
+          "user:contractor@gmail.com",
+          "serviceAccount:ci-deployer@demo-prod-1234.iam.gserviceaccount.com"
+        ],
+        "condition": null
+      },
+      {
+        "role": "roles/compute.admin",
+        "members": ["group:platform-team@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/iam.serviceAccountTokenCreator",
+        "members": ["user:contractor@gmail.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/serviceusage.serviceUsageAdmin",
+        "members": ["serviceAccount:ci-deployer@demo-prod-1234.iam.gserviceaccount.com"],
+        "condition": null
+      }
+    ],
+    "audit_configs": []
+  },
+  "service_accounts": {
+    "project_id": "demo-prod-1234",
+    "service_accounts": [
+      {
+        "email": "ci-deployer@demo-prod-1234.iam.gserviceaccount.com",
+        "display_name": "CI deployer",
+        "disabled": false,
+        "user_managed_keys": [
+          {
+            "name": "keys/aaa111",
+            "valid_after": "2023-01-04T00:00:00Z",
+            "valid_before": "2033-01-04T00:00:00Z"
+          }
+        ],
+        "bindings": []
+      },
+      {
+        "email": "990011223344-compute@developer.gserviceaccount.com",
+        "display_name": "Compute Engine default service account",
+        "disabled": false,
+        "user_managed_keys": [],
+        "bindings": []
+      }
+    ]
+  },
+  "gce_inventory": {
+    "project_id": "demo-prod-1234",
+    "project_metadata": {"enable-oslogin": "FALSE"},
+    "instances": [
+      {
+        "name": "batch-worker-7",
+        "zone": "us-central1-a",
+        "status": "RUNNING",
+        "machine_type": "n1-standard-16",
+        "gpu_count": 1,
+        "can_ip_forward": true,
+        "shielded_vm": false,
+        "service_accounts": [
+          {
+            "email": "990011223344-compute@developer.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+          }
+        ],
+        "external_ips": ["203.0.113.44"]
+      },
+      {
+        "name": "render-node-2",
+        "zone": "us-central1-b",
+        "status": "RUNNING",
+        "machine_type": "c2-standard-30",
+        "gpu_count": 0,
+        "can_ip_forward": false,
+        "shielded_vm": true,
+        "service_accounts": [
+          {
+            "email": "render@demo-prod-1234.iam.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/devstorage.read_only"]
+          }
+        ],
+        "external_ips": []
+      },
+      {
+        "name": "ml-train-1",
+        "zone": "us-central1-b",
+        "status": "RUNNING",
+        "machine_type": "a2-highgpu-1g",
+        "gpu_count": 1,
+        "can_ip_forward": false,
+        "shielded_vm": true,
+        "service_accounts": [
+          {
+            "email": "ml@demo-prod-1234.iam.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/devstorage.read_only"]
+          }
+        ],
+        "external_ips": []
+      },
+      {
+        "name": "api-frontend-1",
+        "zone": "us-central1-b",
+        "status": "RUNNING",
+        "machine_type": "e2-standard-2",
+        "gpu_count": 0,
+        "can_ip_forward": false,
+        "shielded_vm": true,
+        "service_accounts": [
+          {
+            "email": "api@demo-prod-1234.iam.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/devstorage.read_only"]
+          }
+        ],
+        "external_ips": ["203.0.113.9"]
+      }
+    ]
+  }
+}
