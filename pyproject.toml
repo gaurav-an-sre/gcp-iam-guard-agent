@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gcp-guard-agents"
+version = "0.2.0"
+description = "ADK workflow agents that audit GCP IAM for privilege escalation and phishing exposure, and detect cryptojacking abuse"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "google-adk>=2.6,<3",
+    "google-cloud-resource-manager>=1.14",
+    "google-cloud-iam>=2.15",
+    "google-cloud-compute>=1.19",
+    "google-cloud-storage>=2.18",
+    "google-cloud-bigquery>=3.25",
+    "google-cloud-monitoring>=2.21",
+    "google-cloud-securitycenter>=1.31",
+    "google-cloud-billing-budgets>=1.14",
+    "google-cloud-org-policy>=1.10",
+]
+
+[project.optional-dependencies]
+deploy = ["google-cloud-aiplatform[agent_engines,adk]>=1.112"]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[tool.setuptools]
+packages = [
+    "iam_guard",
+    "iam_guard.tools",
+    "cryptojack_guard",
+    "cryptojack_guard.tools",
+    "deployment",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::FutureWarning"]
