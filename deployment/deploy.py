@@ -256,7 +256,7 @@ def main() -> int:
         default="",
         help="Billing account id, for cryptojack-guard budget reads.",
     )
-    parser.add_argument("--model", default="gemini-2.5-flash")
+    parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument(
         "--trusted-domains",
         default="",

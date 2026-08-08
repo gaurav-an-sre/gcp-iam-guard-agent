@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 
 # Domains that are never expected to hold IAM bindings in a corporate project.
 # Bindings for these are treated as a phishing / account-takeover foothold.
