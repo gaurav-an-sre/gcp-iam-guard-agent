@@ -21,17 +21,28 @@ import json
 import os
 import sys
 
+from google.auth import exceptions as auth_exceptions
 from google.genai import types
 
 APP_NAME = "iam-guard"
+
+
+def _fail(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 1
 
 
 def _run_rules_only(path: str) -> int:
     from iam_guard.analysis import analyze
     from iam_guard.models import summarize
 
-    with open(path, encoding="utf-8") as handle:
-        inventory = json.load(handle)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            inventory = json.load(handle)
+    except OSError as error:
+        return _fail(f"cannot read inventory {path}: {error.strerror or error}")
+    except json.JSONDecodeError as error:
+        return _fail(f"{path} is not valid JSON: {error}")
 
     findings = analyze(inventory)
     print(json.dumps(summarize(findings), indent=2))
@@ -91,7 +102,15 @@ def main() -> int:
     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", args.project)
 
-    return asyncio.run(_run_agent(args.project, args.prompt.format(project=args.project)))
+    try:
+        return asyncio.run(_run_agent(args.project, args.prompt.format(project=args.project)))
+    except auth_exceptions.GoogleAuthError as error:
+        return _fail(
+            f"Google Cloud credentials are missing or invalid ({type(error).__name__}). "
+            "Run 'gcloud auth application-default login' and make sure the Vertex AI API "
+            f"is enabled on project {args.project}. To try the agent without any GCP "
+            "access, set IAM_GUARD_FIXTURE to a recorded inventory, or use --rules-only."
+        )
 
 
 if __name__ == "__main__":

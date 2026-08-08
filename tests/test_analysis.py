@@ -199,3 +199,46 @@ def test_every_finding_is_serialisable_and_explained(
 
 def test_empty_inventory_yields_no_findings(settings: Settings) -> None:
     assert analyze({}, settings) == []
+
+
+MALFORMED_INVENTORIES: list[dict[str, Any]] = [
+    {"project_iam": None, "gce_inventory": None},
+    {"project_iam": {"bindings": None}},
+    {"project_iam": {"bindings": [{"role": None, "members": None}]}},
+    {"project_iam": {"bindings": [123, "x", {"role": 5, "members": [7]}]}},
+    {"project_iam": []},
+    {"service_accounts": {"service_accounts": None}},
+    {
+        "service_accounts": {
+            "service_accounts": [
+                {"email": None, "user_managed_keys": None, "iam_policy_bindings": None}
+            ]
+        }
+    },
+    {"gce_inventory": {"instances": None, "project_metadata": None}},
+    {
+        "gce_inventory": {
+            "instances": [{"name": "i", "service_accounts": [{"email": None, "scopes": None}]}]
+        }
+    },
+    {"gcs_inventory": {"buckets": None}},
+    {"gcs_inventory": {"buckets": [{"name": "b", "bindings": None}]}},
+    {"bigquery_inventory": {"datasets": None}},
+    {"bigquery_inventory": {"datasets": [{"dataset_id": "d", "access_entries": None}]}},
+    {
+        "bigquery_inventory": {
+            "datasets": [
+                {
+                    "dataset_id": "d",
+                    "access_entries": [{"entity_type": "domain", "entity_id": 123, "role": None}],
+                }
+            ]
+        }
+    },
+]
+
+
+@pytest.mark.parametrize("inventory", MALFORMED_INVENTORIES)
+def test_malformed_inventories_do_not_crash(inventory: dict[str, Any], settings: Settings) -> None:
+    for finding in analyze(inventory, settings):
+        finding.to_dict()

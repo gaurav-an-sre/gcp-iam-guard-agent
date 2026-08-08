@@ -28,19 +28,44 @@ from iam_guard.models import (
 _PUBLIC_BQ_ENTITIES = {"allAuthenticatedUsers", "allUsers"}
 
 
+def _dicts(container: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Reads ``key`` as a list of objects, tolerating null, scalars and junk items."""
+    value = container.get(key)
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _strings(container: dict[str, Any], key: str) -> list[str]:
+    value = container.get(key)
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _mapping(container: dict[str, Any], key: str) -> dict[str, Any]:
+    value = container.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _text(container: dict[str, Any], key: str, default: str = "") -> str:
+    value = container.get(key)
+    return value if isinstance(value, str) and value else default
+
+
 def _bindings(project_iam: dict[str, Any]) -> list[dict[str, Any]]:
-    return [b for b in project_iam.get("bindings", []) if isinstance(b, dict)]
+    return _dicts(project_iam, "bindings")
 
 
 def _members(binding: dict[str, Any]) -> list[str]:
-    return [m for m in binding.get("members", []) if isinstance(m, str)]
+    return _strings(binding, "members")
 
 
 def _principal_roles(project_iam: dict[str, Any]) -> dict[str, set[str]]:
     """Inverts the project policy into ``principal -> {roles}``."""
     mapping: dict[str, set[str]] = {}
     for binding in _bindings(project_iam):
-        role = binding.get("role", "")
+        role = _text(binding, "role")
         for member in _members(binding):
             mapping.setdefault(member, set()).add(role)
     return mapping
@@ -56,7 +81,7 @@ def _is_untrusted(principal: str, settings: Settings) -> bool:
 
 
 def _project_ref(project_iam: dict[str, Any]) -> str:
-    project_id = project_iam.get("project_id", "unknown-project")
+    project_id = _text(project_iam, "project_id", "unknown-project")
     return f"//cloudresourcemanager.googleapis.com/projects/{project_id}"
 
 
@@ -67,11 +92,11 @@ def _project_ref(project_iam: dict[str, Any]) -> str:
 
 def check_project_iam(project_iam: dict[str, Any], settings: Settings) -> list[Finding]:
     findings: list[Finding] = []
-    project_id = project_iam.get("project_id", "unknown-project")
+    project_id = _text(project_iam, "project_id", "unknown-project")
     resource = _project_ref(project_iam)
 
     for binding in _bindings(project_iam):
-        role = binding.get("role", "")
+        role = _text(binding, "role")
         condition = binding.get("condition")
         members = _members(binding)
 
@@ -284,13 +309,13 @@ def check_attack_paths(
     """Correlates individually-acceptable grants into concrete abuse chains."""
     findings: list[Finding] = []
     resource = _project_ref(project_iam)
-    project_id = project_iam.get("project_id", "unknown-project")
+    project_id = _text(project_iam, "project_id", "unknown-project")
     granted = _principal_roles(project_iam)
 
     privileged_sas = [
-        sa.get("email", "")
-        for sa in service_accounts.get("service_accounts", [])
-        if granted.get(f"serviceAccount:{sa.get('email', '')}", set())
+        _text(sa, "email")
+        for sa in _dicts(service_accounts, "service_accounts")
+        if granted.get(f"serviceAccount:{_text(sa, 'email')}", set())
         & (role_kb.IAM_ADMIN_ROLES | role_kb.BASIC_ROLES - {"roles/viewer"})
     ]
 
@@ -387,10 +412,10 @@ def check_service_accounts(
     findings: list[Finding] = []
     granted = _principal_roles(project_iam)
 
-    for account in service_accounts.get("service_accounts", []):
-        email = account.get("email", "")
+    for account in _dicts(service_accounts, "service_accounts"):
+        email = _text(account, "email")
         resource = f"//iam.googleapis.com/projects/-/serviceAccounts/{email}"
-        keys = account.get("user_managed_keys", [])
+        keys = _dicts(account, "user_managed_keys")
         if keys:
             findings.append(
                 Finding(
@@ -442,9 +467,9 @@ def check_service_accounts(
                 )
             )
 
-        for binding in account.get("iam_policy_bindings", []):
-            role = binding.get("role", "")
-            members = [m for m in binding.get("members", []) if isinstance(m, str)]
+        for binding in _dicts(account, "iam_policy_bindings"):
+            role = _text(binding, "role")
+            members = _members(binding)
             public = [m for m in members if role_kb.is_public(m)]
             if public:
                 findings.append(
@@ -513,7 +538,7 @@ def check_service_accounts(
 def check_gce(gce: dict[str, Any], project_iam: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     granted = _principal_roles(project_iam)
-    project_metadata = gce.get("project_metadata", {})
+    project_metadata = _mapping(gce, "project_metadata")
 
     if str(project_metadata.get("enable-oslogin", "")).upper() not in {"TRUE", "1"}:
         findings.append(
@@ -539,16 +564,16 @@ def check_gce(gce: dict[str, Any], project_iam: dict[str, Any]) -> list[Finding]
             )
         )
 
-    for instance in gce.get("instances", []):
-        name = instance.get("name", "")
-        zone = instance.get("zone", "")
-        project = gce.get("project_id", "")
+    for instance in _dicts(gce, "instances"):
+        name = _text(instance, "name")
+        zone = _text(instance, "zone")
+        project = _text(gce, "project_id")
         resource = f"//compute.googleapis.com/projects/{project}/zones/{zone}/instances/{name}"
-        attached = instance.get("service_accounts", [])
+        attached = _dicts(instance, "service_accounts")
 
         for sa in attached:
-            email = sa.get("email", "")
-            scopes = sa.get("scopes", [])
+            email = _text(sa, "email")
+            scopes = _strings(sa, "scopes")
             is_default = email.endswith("-compute@developer.gserviceaccount.com")
             broad_scope = "https://www.googleapis.com/auth/cloud-platform" in scopes
             sa_roles = granted.get(f"serviceAccount:{email}", set())
@@ -636,7 +661,7 @@ def check_gce(gce: dict[str, Any], project_iam: dict[str, Any]) -> list[Finding]
                 )
             )
 
-        metadata = instance.get("metadata", {})
+        metadata = _mapping(instance, "metadata")
         startup_script = metadata.get("startup-script") or metadata.get("startup-script-url")
         if startup_script and instance.get("block_project_ssh_keys") is False:
             findings.append(
@@ -718,13 +743,13 @@ def check_gce(gce: dict[str, Any], project_iam: dict[str, Any]) -> list[Finding]
 def check_gcs(gcs: dict[str, Any], settings: Settings) -> list[Finding]:
     findings: list[Finding] = []
 
-    for bucket in gcs.get("buckets", []):
-        name = bucket.get("name", "")
+    for bucket in _dicts(gcs, "buckets"):
+        name = _text(bucket, "name")
         resource = f"//storage.googleapis.com/projects/_/buckets/{name}"
 
-        for binding in bucket.get("bindings", []):
-            role = binding.get("role", "")
-            members = [m for m in binding.get("members", []) if isinstance(m, str)]
+        for binding in _dicts(bucket, "bindings"):
+            role = _text(binding, "role")
+            members = _members(binding)
             public = [m for m in members if role_kb.is_public(m)]
             if public:
                 findings.append(
@@ -851,16 +876,16 @@ def check_gcs(gcs: dict[str, Any], settings: Settings) -> list[Finding]:
 
 def check_bigquery(bigquery_inventory: dict[str, Any], settings: Settings) -> list[Finding]:
     findings: list[Finding] = []
-    project_id = bigquery_inventory.get("project_id", "unknown-project")
+    project_id = _text(bigquery_inventory, "project_id", "unknown-project")
 
-    for dataset in bigquery_inventory.get("datasets", []):
-        dataset_id = dataset.get("dataset_id", "")
+    for dataset in _dicts(bigquery_inventory, "datasets"):
+        dataset_id = _text(dataset, "dataset_id")
         resource = f"//bigquery.googleapis.com/projects/{project_id}/datasets/{dataset_id}"
 
-        for entry in dataset.get("access_entries", []):
-            entity_type = entry.get("entity_type", "")
-            entity_id = entry.get("entity_id", "")
-            role = entry.get("role") or "READER"
+        for entry in _dicts(dataset, "access_entries"):
+            entity_type = _text(entry, "entity_type")
+            entity_id = _text(entry, "entity_id")
+            role = _text(entry, "role", "READER")
 
             if entity_type == "specialGroup" and entity_id in _PUBLIC_BQ_ENTITIES:
                 findings.append(
@@ -971,11 +996,11 @@ def check_bigquery(bigquery_inventory: dict[str, Any], settings: Settings) -> li
 def analyze(inventory: dict[str, Any], settings: Settings | None = None) -> list[Finding]:
     """Runs every rule over ``inventory`` and returns findings ordered by severity."""
     settings = settings or get_settings()
-    project_iam = inventory.get(STATE_PROJECT_IAM) or {}
-    service_accounts = inventory.get(STATE_SERVICE_ACCOUNTS) or {}
-    gce = inventory.get(STATE_GCE) or {}
-    gcs = inventory.get(STATE_GCS) or {}
-    bigquery_inventory = inventory.get(STATE_BIGQUERY) or {}
+    project_iam = _mapping(inventory, STATE_PROJECT_IAM)
+    service_accounts = _mapping(inventory, STATE_SERVICE_ACCOUNTS)
+    gce = _mapping(inventory, STATE_GCE)
+    gcs = _mapping(inventory, STATE_GCS)
+    bigquery_inventory = _mapping(inventory, STATE_BIGQUERY)
 
     findings: list[Finding] = []
     if project_iam:

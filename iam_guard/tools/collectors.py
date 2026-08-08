@@ -20,6 +20,7 @@ from typing import Any
 
 from google.adk.tools import ToolContext
 from google.api_core import exceptions as gcp_exceptions
+from google.auth import exceptions as auth_exceptions
 from google.cloud import bigquery, compute_v1, iam_admin_v1, resourcemanager_v3, storage
 from google.iam.v1 import iam_policy_pb2, options_pb2
 
@@ -34,6 +35,13 @@ from iam_guard.models import (
 )
 
 FIXTURE_ENV_VAR = "IAM_GUARD_FIXTURE"
+
+#: Credential errors surface while building a client, API errors while calling it.
+COLLECTION_ERRORS = (
+    gcp_exceptions.GoogleAPIError,
+    auth_exceptions.GoogleAuthError,
+    OSError,
+)
 
 
 def _resolve_project(project_id: str) -> str:
@@ -69,6 +77,22 @@ def _failure(
     return {"status": "error", "error": message, "hint": hint}
 
 
+def _load_fixture(
+    section: str, tool_context: ToolContext | None
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Returns ``(inventory, failure)``; both are None when running against live APIs."""
+    try:
+        return _fixture(section), None
+    except (OSError, ValueError) as error:
+        return None, _failure(
+            tool_context,
+            section,
+            error,
+            f"Point {FIXTURE_ENV_VAR} at a readable JSON inventory file, or unset it "
+            "to collect from Google Cloud.",
+        )
+
+
 def collect_project_iam_policy(
     project_id: str = "", tool_context: ToolContext | None = None
 ) -> dict[str, Any]:
@@ -84,7 +108,9 @@ def collect_project_iam_policy(
     if not project_id:
         return {"status": "error", "error": "No project_id supplied or configured."}
 
-    inventory = _fixture(STATE_PROJECT_IAM)
+    inventory, failure = _load_fixture(STATE_PROJECT_IAM, tool_context)
+    if failure is not None:
+        return failure
     if inventory is None:
         try:
             client = resourcemanager_v3.ProjectsClient()
@@ -94,7 +120,7 @@ def collect_project_iam_policy(
                     options=options_pb2.GetPolicyOptions(requested_policy_version=3),
                 )
             )
-        except (gcp_exceptions.GoogleAPIError, OSError) as error:
+        except COLLECTION_ERRORS as error:
             return _failure(
                 tool_context,
                 STATE_PROJECT_IAM,
@@ -161,7 +187,9 @@ def collect_service_accounts(
     if not project_id:
         return {"status": "error", "error": "No project_id supplied or configured."}
 
-    inventory = _fixture(STATE_SERVICE_ACCOUNTS)
+    inventory, failure = _load_fixture(STATE_SERVICE_ACCOUNTS, tool_context)
+    if failure is not None:
+        return failure
     if inventory is None:
         try:
             client = iam_admin_v1.IAMClient()
@@ -196,7 +224,7 @@ def collect_service_accounts(
                         ],
                     }
                 )
-        except (gcp_exceptions.GoogleAPIError, OSError) as error:
+        except COLLECTION_ERRORS as error:
             return _failure(
                 tool_context,
                 STATE_SERVICE_ACCOUNTS,
@@ -233,7 +261,9 @@ def collect_compute_inventory(
         return {"status": "error", "error": "No project_id supplied or configured."}
     settings = get_settings()
 
-    inventory = _fixture(STATE_GCE)
+    inventory, failure = _load_fixture(STATE_GCE, tool_context)
+    if failure is not None:
+        return failure
     if inventory is None:
         try:
             instances_client = compute_v1.InstancesClient()
@@ -283,7 +313,7 @@ def collect_compute_inventory(
                             in {"true", "1"},
                         }
                     )
-        except (gcp_exceptions.GoogleAPIError, OSError) as error:
+        except COLLECTION_ERRORS as error:
             return _failure(
                 tool_context,
                 STATE_GCE,
@@ -335,7 +365,9 @@ def collect_storage_inventory(
         return {"status": "error", "error": "No project_id supplied or configured."}
     settings = get_settings()
 
-    inventory = _fixture(STATE_GCS)
+    inventory, failure = _load_fixture(STATE_GCS, tool_context)
+    if failure is not None:
+        return failure
     if inventory is None:
         try:
             client = storage.Client(project=project_id)
@@ -358,7 +390,7 @@ def collect_storage_inventory(
                         ],
                     }
                 )
-        except (gcp_exceptions.GoogleAPIError, OSError) as error:
+        except COLLECTION_ERRORS as error:
             return _failure(
                 tool_context,
                 STATE_GCS,
@@ -399,7 +431,9 @@ def collect_bigquery_inventory(
         return {"status": "error", "error": "No project_id supplied or configured."}
     settings = get_settings()
 
-    inventory = _fixture(STATE_BIGQUERY)
+    inventory, failure = _load_fixture(STATE_BIGQUERY, tool_context)
+    if failure is not None:
+        return failure
     if inventory is None:
         try:
             client = bigquery.Client(project=project_id)
@@ -420,7 +454,7 @@ def collect_bigquery_inventory(
                         ],
                     }
                 )
-        except (gcp_exceptions.GoogleAPIError, OSError) as error:
+        except COLLECTION_ERRORS as error:
             return _failure(
                 tool_context,
                 STATE_BIGQUERY,

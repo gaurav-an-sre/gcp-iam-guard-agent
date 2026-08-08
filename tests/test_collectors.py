@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 from google.api_core import exceptions as gcp_exceptions
+from google.auth import exceptions as auth_exceptions
 
-from iam_guard.models import STATE_COLLECTION_ERRORS, STATE_GCS, STATE_PROJECT_IAM
+from iam_guard.models import (
+    STATE_BIGQUERY,
+    STATE_COLLECTION_ERRORS,
+    STATE_GCE,
+    STATE_GCS,
+    STATE_PROJECT_IAM,
+    STATE_SERVICE_ACCOUNTS,
+)
 from iam_guard.tools import collectors
 
 
@@ -73,6 +82,45 @@ def test_api_errors_are_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> 
     assert result["status"] == "error"
     assert "PermissionDenied" in result["error"]
     assert STATE_PROJECT_IAM in context.state[STATE_COLLECTION_ERRORS]
+
+
+def test_missing_credentials_are_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("IAM_GUARD_FIXTURE", raising=False)
+    monkeypatch.setenv("IAM_GUARD_PROJECT_ID", "demo-prod-1234")
+
+    def boom(*_args: Any, **_kwargs: Any):
+        raise auth_exceptions.DefaultCredentialsError("could not automatically determine creds")
+
+    monkeypatch.setattr(collectors.resourcemanager_v3, "ProjectsClient", boom)
+
+    context = FakeToolContext()
+    result = collectors.collect_project_iam_policy(tool_context=context)
+
+    assert result["status"] == "error"
+    assert "DefaultCredentialsError" in result["error"]
+    assert STATE_PROJECT_IAM in context.state[STATE_COLLECTION_ERRORS]
+
+
+@pytest.mark.parametrize("content", [None, "{not json"])
+def test_unusable_fixture_is_reported_not_raised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str | None
+) -> None:
+    path = tmp_path / "inventory.json"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("IAM_GUARD_FIXTURE", str(path))
+    monkeypatch.setenv("IAM_GUARD_PROJECT_ID", "demo-prod-1234")
+
+    context = FakeToolContext()
+    for tool in collectors.COLLECTOR_TOOLS:
+        assert tool(tool_context=context)["status"] == "error"
+    assert set(context.state[STATE_COLLECTION_ERRORS]) == {
+        STATE_PROJECT_IAM,
+        STATE_SERVICE_ACCOUNTS,
+        STATE_GCE,
+        STATE_GCS,
+        STATE_BIGQUERY,
+    }
 
 
 def test_collectors_work_without_a_tool_context(fixture_env: None) -> None:
