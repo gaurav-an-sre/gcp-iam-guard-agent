@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iam-guard-agent"
+version = "0.1.0"
+description = "ADK workflow agent that audits GCP IAM for privilege escalation, cryptojacking and phishing exposure"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "google-adk>=2.6,<3",
+    "google-cloud-resource-manager>=1.14",
+    "google-cloud-iam>=2.15",
+    "google-cloud-compute>=1.19",
+    "google-cloud-storage>=2.18",
+    "google-cloud-bigquery>=3.25",
+]
+
+[project.optional-dependencies]
+deploy = ["google-cloud-aiplatform[agent_engines,adk]>=1.112"]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[tool.setuptools]
+packages = ["iam_guard", "iam_guard.tools", "deployment"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::FutureWarning"]

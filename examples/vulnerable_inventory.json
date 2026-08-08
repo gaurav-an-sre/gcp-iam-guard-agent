@@ -1,0 +1,180 @@
+{
+  "project_iam": {
+    "project_id": "demo-prod-1234",
+    "bindings": [
+      {
+        "role": "roles/owner",
+        "members": ["user:founder@gmail.com", "user:cto@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/editor",
+        "members": [
+          "serviceAccount:ci-deployer@demo-prod-1234.iam.gserviceaccount.com"
+        ],
+        "condition": null
+      },
+      {
+        "role": "roles/iam.serviceAccountUser",
+        "members": ["user:contractor@outlook.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/compute.instanceAdmin.v1",
+        "members": ["user:contractor@outlook.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/serviceusage.serviceUsageAdmin",
+        "members": ["group:platform-team@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/storage.objectViewer",
+        "members": ["allUsers"],
+        "condition": null
+      },
+      {
+        "role": "roles/iam.serviceAccountTokenCreator",
+        "members": ["group:data-science@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/bigquery.dataViewer",
+        "members": ["group:analysts@example.com"],
+        "condition": null
+      },
+      {
+        "role": "roles/storage.objectViewer",
+        "members": [
+          "serviceAccount:legacy-batch@demo-prod-1234.iam.gserviceaccount.com"
+        ],
+        "condition": null
+      }
+    ],
+    "audit_configs": []
+  },
+  "service_accounts": {
+    "project_id": "demo-prod-1234",
+    "service_accounts": [
+      {
+        "email": "ci-deployer@demo-prod-1234.iam.gserviceaccount.com",
+        "display_name": "CI deployer",
+        "disabled": false,
+        "user_managed_keys": [
+          {"key_id": "0a1b2c3d4e5f", "valid_after": "2023-01-04T10:00:00Z"}
+        ],
+        "iam_policy_bindings": [
+          {
+            "role": "roles/iam.serviceAccountTokenCreator",
+            "members": ["user:contractor@outlook.com"]
+          }
+        ]
+      },
+      {
+        "email": "legacy-batch@demo-prod-1234.iam.gserviceaccount.com",
+        "display_name": "Legacy batch job",
+        "disabled": true,
+        "user_managed_keys": [],
+        "iam_policy_bindings": []
+      }
+    ]
+  },
+  "gce_inventory": {
+    "project_id": "demo-prod-1234",
+    "project_metadata": {"enable-oslogin": "FALSE"},
+    "instances": [
+      {
+        "name": "web-frontend-1",
+        "zone": "us-central1-a",
+        "status": "RUNNING",
+        "machine_type": "e2-standard-4",
+        "gpu_count": 0,
+        "can_ip_forward": false,
+        "shielded_vm": false,
+        "service_accounts": [
+          {
+            "email": "123456789-compute@developer.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+          }
+        ],
+        "external_ips": ["34.68.12.9"],
+        "metadata": {"startup-script": "#!/bin/bash\napt-get update"},
+        "block_project_ssh_keys": false,
+        "serial_port_enabled": true
+      },
+      {
+        "name": "ml-trainer-a100",
+        "zone": "us-central1-b",
+        "status": "RUNNING",
+        "machine_type": "a2-highgpu-1g",
+        "gpu_count": 1,
+        "can_ip_forward": false,
+        "shielded_vm": true,
+        "service_accounts": [
+          {
+            "email": "ci-deployer@demo-prod-1234.iam.gserviceaccount.com",
+            "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+          }
+        ],
+        "external_ips": [],
+        "metadata": {},
+        "block_project_ssh_keys": true,
+        "serial_port_enabled": false
+      }
+    ]
+  },
+  "gcs_inventory": {
+    "project_id": "demo-prod-1234",
+    "buckets": [
+      {
+        "name": "demo-prod-public-assets",
+        "location": "US",
+        "uniform_bucket_level_access": false,
+        "public_access_prevention": "inherited",
+        "versioning_enabled": false,
+        "bindings": [
+          {"role": "roles/storage.objectViewer", "members": ["allUsers"]},
+          {
+            "role": "roles/storage.legacyBucketOwner",
+            "members": ["projectOwner:demo-prod-1234"]
+          }
+        ]
+      },
+      {
+        "name": "demo-prod-customer-exports",
+        "location": "US",
+        "uniform_bucket_level_access": true,
+        "public_access_prevention": "enforced",
+        "versioning_enabled": true,
+        "bindings": [
+          {
+            "role": "roles/storage.objectAdmin",
+            "members": ["user:contractor@outlook.com"]
+          }
+        ]
+      }
+    ]
+  },
+  "bigquery_inventory": {
+    "project_id": "demo-prod-1234",
+    "datasets": [
+      {
+        "dataset_id": "customer_analytics",
+        "location": "US",
+        "access_entries": [
+          {"role": "READER", "entity_type": "specialGroup", "entity_id": "allAuthenticatedUsers"},
+          {"role": "OWNER", "entity_type": "specialGroup", "entity_id": "projectEditors"},
+          {"role": "READER", "entity_type": "domain", "entity_id": "partner-agency.io"}
+        ]
+      },
+      {
+        "dataset_id": "finance_reporting",
+        "location": "US",
+        "access_entries": [
+          {"role": "WRITER", "entity_type": "userByEmail", "entity_id": "analyst@gmail.com"}
+        ]
+      }
+    ]
+  }
+}
